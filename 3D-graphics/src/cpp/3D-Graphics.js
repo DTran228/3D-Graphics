@@ -4505,6 +4505,10 @@ var _EXTERN_getScenePosDataBuffer = Module["_EXTERN_getScenePosDataBuffer"] = ()
 
 var _EXTERN_getSceneColorDataBuffer = Module["_EXTERN_getSceneColorDataBuffer"] = () => (_EXTERN_getSceneColorDataBuffer = Module["_EXTERN_getSceneColorDataBuffer"] = wasmExports["EXTERN_getSceneColorDataBuffer"])();
 
+var _EXTERN_setSceneDataBuffer = Module["_EXTERN_setSceneDataBuffer"] = a0 => (_EXTERN_setSceneDataBuffer = Module["_EXTERN_setSceneDataBuffer"] = wasmExports["EXTERN_setSceneDataBuffer"])(a0);
+
+var _EXTERN_loadScene = Module["_EXTERN_loadScene"] = (a0, a1, a2) => (_EXTERN_loadScene = Module["_EXTERN_loadScene"] = wasmExports["EXTERN_loadScene"])(a0, a1, a2);
+
 var _main = Module["_main"] = (a0, a1) => (_main = Module["_main"] = wasmExports["__main_argc_argv"])(a0, a1);
 
 var __emscripten_tls_init = () => (__emscripten_tls_init = wasmExports["_emscripten_tls_init"])();
