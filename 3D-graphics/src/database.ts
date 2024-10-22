@@ -6,8 +6,6 @@ import './rightSideBar.ts'
 // INITIALIZING SUPABASE
 const SUPABASE_URL: string = import.meta.env.[removed legacy database configuration];
 const SUPABASE_API_KEY: string = import.meta.env.[removed legacy database configuration];
-console.log(SUPABASE_URL);
-console.log(SUPABASE_API_KEY);
 
 export const supabase = createClient<Database>(
     SUPABASE_URL,
