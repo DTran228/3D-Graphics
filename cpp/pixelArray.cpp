@@ -18,11 +18,11 @@ void PixelArray::clear() {
     }
 }
 int PixelArray::getIndex(int x, int y) {
-    if (x < 0 || x >= width || y < 0 || y >= height) {
-        std::cout << "PixelArray::getIndex() failed, pixel coordinates out of bounds. INPUTS: x = " << x << 
-        ", y = " << y << std::endl; 
-        throw "pixel coordinates out of bounds";
-    }
+    // if (x < 0 || x >= width || y < 0 || y >= height) {
+    //     std::cout << "PixelArray::getIndex() failed, pixel coordinates out of bounds. INPUTS: x = " << x << 
+    //     ", y = " << y << std::endl; 
+    //     throw "pixel coordinates out of bounds";
+    // }
     return (width * y) + x;
 }
 void PixelArray::setPixel(int x, int y, int r, int g, int b) {
