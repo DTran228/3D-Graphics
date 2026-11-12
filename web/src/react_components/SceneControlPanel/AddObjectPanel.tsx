@@ -16,19 +16,20 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { getFileBytes } from "@/index";
+import { wasmToJsBridge } from "@/wasmToJSBridge";
 
 type ObjectType = 'Sphere' | 'Box' | 'Custom';
 
 // Mock WASM function calls for adding objects
 const wasmAddCustomObject = async (file: File) => {
     console.log(`WASM: Add Custom Object from file ${file.name}`);
-    const glbBuffer = await file.arrayBuffer();
-    const glbBytes = new Uint8Array(glbBuffer);
-    if (glbBytes) {
-        wasm.add_custom_object(glbBytes);
-    } else {
-        console.error("Failed to load GLB bytes for custom object, glbBytes is null or undefined.");
+    wasmToJsBridge.updateSceneLoading(true);
+    try {
+        wasm.add_custom_object(new Uint8Array(await file.arrayBuffer()));
+    } catch (error) {
+        console.error('Could not import GLB:', error);
+    } finally {
+        wasmToJsBridge.updateSceneLoading(false);
     }
 };
 

@@ -1,94 +1,124 @@
-# 3D Graphics Renderer in Rust and WebAssembly
+<div align="center">
+  <h1>◈ 3D Graphics</h1>
+  <p><strong>Edit and render 3D scenes directly in your browser.</strong></p>
+  <p>Live raster previews · Progressive CPU path tracing · Reproducible BVH benchmarks</p>
 
-A multi-threaded CPU-based 3D graphics renderer built with Rust, compiled to WebAssembly, and displayed in the browser using a React and TypeScript frontend. This project explores various rendering techniques, including rasterization and ray tracing, along with interactive scene manipulation.
+  <p>
+    <a href="wasm-graphics/Cargo.toml"><img src="https://img.shields.io/badge/Rust-Engine-CE422B?style=flat-square&amp;logo=rust&amp;logoColor=white" alt="Rust engine"></a>
+    <a href="wasm-graphics/build.ps1"><img src="https://img.shields.io/badge/WebAssembly-Runtime-654FF0?style=flat-square&amp;logo=webassembly&amp;logoColor=white" alt="WebAssembly runtime"></a>
+    <a href="benchmarks/README.md"><img src="https://img.shields.io/badge/Rayon-CPU_Workers-286D75?style=flat-square" alt="Rayon CPU workers"></a>
+    <a href="web/package.json"><img src="https://img.shields.io/badge/React-TypeScript-087EA4?style=flat-square&amp;logo=react&amp;logoColor=white" alt="React and TypeScript"></a>
+  </p>
 
-[**Access the live demo right here in your browser!**](https://elliottf05.github.io/3D-Graphics/)
+  <p>
+    <a href="#quick-start"><strong>Run locally</strong></a> ·
+    <a href="#see-it-in-action"><strong>See the renderer</strong></a> ·
+    <a href="#benchmark"><strong>Explore the benchmark</strong></a>
+  </p>
 
-![Crown Jewel Render](images/rt7.png)
+  <table>
+    <tr>
+      <td width="33%"><a href="images/rt10.png"><img src="images/rt10.png" width="100%" alt="Area light casting a soft shadow from a sphere"></a></td>
+      <td width="34%"><a href="images/rt7.png"><img src="images/rt7.png" width="100%" alt="Glossy dragon sculpture reflected in a dark floor"></a></td>
+      <td width="33%"><a href="images/rt11.png"><img src="images/rt11.png" width="100%" alt="Glass Suzanne model refracting light onto a dark floor"></a></td>
+    </tr>
+  </table>
+  <sub>Gallery renders from the original 3D Graphics engine.</sub>
+</div>
 
-## Features
+---
 
-This project's 3D graphics engine, written in Rust and compiled to WebAssembly, offers two distinct rendering methods and several advanced features:
+## Why 3D Graphics?
 
-*   **Core Engine & Parallelism:**
-    *   The engine combines a real-time rasterizer with a path-tracing ray tracer. Both rendering pipelines are accelerated using Rayon for CPU-based multithreading.
+Move through a scene, change its geometry and materials, and watch the same camera view resolve into a path-traced image. Both renderers run on the CPU inside the browser through Rust and WebAssembly.
 
-*   **Advanced Ray Tracing Capabilities:**
-    *   Implements a path tracer with for photorealistic light simulation. It uses Multiple Importance Sampling (MIS) with direct light sampling via probabilistic Monte Carlo integration to reduce noise, as well as Russian Roulette path termination.
-    *   Ray intersections are accelerated by a Bounding Volume Hierarchy (BVH). This is represented contiguously in memory as a flattened tree for better cache properties.
-    *   Supports physically inspired materials including dielectrics (glass with Snell's Law refraction and Schlick's Fresnel approximation), metals (configurable roughness), emissives, and a two-layer clear coat. Also realistically models depth of field camera effects.
+- **Build a scene.** Start with a preset, add spheres and boxes, or import a GLB model. Move, rotate, and scale objects in the editor.
+- **Preview while editing.** Use the raster view to frame the camera and adjust the field of view, focal distance, and depth of field.
+- **Trace the lighting.** Explore diffuse, metal, glass, emissive, and clear-coat materials. Set a samples-per-pixel target, follow progress, and cancel back to the editor.
+- **Measure the engine.** Compare brute-force intersections with a bounding volume hierarchy (BVH), then measure what changes when Rayon uses eight workers.
 
-*   **Real-Time Rasterization Techniques:**
-    *   Features a real-time scanline triangle rasterizer with Z-buffering, perspective-correct interpolation, and near-plane clipping.
-    *   Includes*shadow mapping for multiple lights with basic filtering for softer shadows.
-    *   Applies Phong lighting and a fast screen-space post-processing depth of field effect.
+## See it in action
 
-*   **Interactive Scene Editing & Control:**
-    *   Web-based interface for real-time scene interaction. Users can move through the scene, pan around, and zoom in.
-    * Users can choose from pre-defined scenes, or import their own 3D models in a GLB format. They can also add basic geometry and modify existing scene objects.
+### Fantasy Book scene
 
-## Tech Stack
+The same edited scene and camera in the raster preview and the finished 8-sample path trace. Select either image to open the full-size capture.
 
-*   **Core Logic:** Rust (with Rayon for parallelism)
-*   **Frontend Logic:** TypeScript, React
-*   **UI Components:** Shadcn and Tailwind
+<div align="center">
+  <table>
+    <tr>
+      <th width="50%">Raster preview</th>
+      <th width="50%">Path tracing · 8 samples per pixel</th>
+    </tr>
+    <tr>
+      <td><a href="benchmarks/results/editor/raster.png"><img src="benchmarks/results/editor/raster.png" width="100%" alt="Raster preview of the edited Fantasy Book scene with a bridge and a rotated red box"></a></td>
+      <td><a href="benchmarks/results/editor/path-traced.png"><img src="benchmarks/results/editor/path-traced.png" width="100%" alt="Path-traced view of the same bridge and red box with shadows and indirect lighting"></a></td>
+    </tr>
+  </table>
+</div>
 
-## Gallery
+<details>
+<summary>View the scene editor and render controls</summary>
 
-![Render Example 1](images/rt11.png)
-![Render Example 2](images/rt8.png)
-![Render Example 3](images/rt5.png)
-![Render Example 4](images/rt6.png)
-![Render Example 5](images/rt4.png)
-![Render Example 6](images/rt3.png)
+[![Browser editor showing a completed path trace and camera and sample controls](benchmarks/results/editor/editor.png)](benchmarks/results/editor/editor.png)
 
-## Getting Started
+</details>
 
-### Prerequisites
+### From scene to render
 
-*   Rust toolchain, available [here](https://www.rust-lang.org/tools/install)
-*   A specific Rust nightly toolchain: `nightly-2024-08-02`. This can be installed via the terminal command `rustup toolchain install nightly-2024-08-02`.
-*   `wasm-pack`, available [here](https://rustwasm.github.io/wasm-pack/installer/)
-*   Node.js and npm
+1. Load a preset or choose **Add New Object** to add a primitive or import a GLB.
+2. Click the canvas to look around. Use **WASD** to move and **Esc** to release the pointer.
+3. Select an object and open **Edit Selected Object** to adjust its transform or material.
+4. Set **Samples per pixel** and select **Start render**. Return to the editor when the image is complete or cancel the current run to keep editing.
 
-### Building and Running
+---
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/ElliottF05/3D-Graphics.git
-    cd 3D-Graphics
-    ```
+## Benchmark
 
-2.  **Build the WebAssembly module:**
-    Navigate to the `wasm-graphics` directory and run the build script:
-    ```bash
-    cd wasm-graphics
-    ./build.sh 
-    ```
-    This will compile the Rust code into WebAssembly and place the output in the `web/wasm` directory.
+<div align="center">
+  <a href="benchmarks/results/preview/valley-preview.png"><img src="benchmarks/results/preview/valley-preview.png" width="480" alt="The Valley fixture with green hills, a blue river, and an overhead area light"></a>
+  <br>
+  <sub>Valley · 100,000 triangles · 480 × 360 at 32 samples per pixel for this preview</sub>
+</div>
 
-3.  **Install frontend dependencies:**
-    Navigate to the `web` directory:
-    ```bash
-    cd web
-    npm install
-    ```
+The timed runs use the same camera, geometry, materials, seed, and quality settings across all three configurations. The table reports medians from five completed runs per configuration at **96 × 72, 2 samples per pixel, depth 5**, on an AMD Ryzen 5 5625U with Chrome 157 on Windows.
 
-4.  **Run the development server:**
-    ```bash
-    cd web
-    npm run dev
-    ```
-    This will start the Vite dev server, from which you can access the application in your browser (usually at `http://localhost:5173`).
+| Configuration | Rayon workers | Render compute | End to end |
+| :--- | ---: | ---: | ---: |
+| A · Brute force | 1 | 30,181.56 ms | 30,310.60 ms |
+| B · Flattened BVH | 1 | 53.23 ms | 336.65 ms |
+| C · Flattened BVH | 8 | 15.25 ms | 329.34 ms |
 
-### Deployment
+The linear RGB images matched exactly across all configurations. A → C was **92.03× faster end to end** for this fixture. B → C reduced render compute by **3.49×**, while BVH construction and startup accounted for most of the end-to-end time at two samples per pixel.
 
-The online demo is deployed on GitHub Pages. Specifically, pushing to the `main` branch will trigger the GitHub Actions workflow defined in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) to build and deploy the `web/dist` folder.
+[Methodology and reproduction (Tiếng Việt)](benchmarks/README.md) · [100,000-triangle runs](benchmarks/results/full-final/runs.json) · [640-triangle runs](benchmarks/results/small-final/runs.json)
 
-## Future Work (Ideas)
+---
 
-*   Port the rendering logic to the GPU using WebGPU and the `wgpu` Rust crate to massively speed up rendering.
+## Under the hood
 
-## Acknowledgements
+| Component | Implementation |
+| :--- | :--- |
+| Rasterizer | Rust scanline triangles, depth buffer, perspective-correct interpolation, and shadow maps |
+| Path tracer | Progressive CPU rendering with direct light sampling, multiple importance sampling, and a flattened BVH |
+| Parallel runtime | Rayon workers in shared WebAssembly memory, with deterministic random streams per pixel and sample |
+| Browser editor | React and TypeScript with a Canvas 2D display and Vite |
 
-*   Inspired by various resources on computer graphics, including "Ray Tracing in One Weekend" series, as well as the many hours I've spent playing 3D video games :)
+## Quick start
+
+Use a Chromium browser and run these commands from the repository root on Windows. Install Node.js and npm, Rust nightly `nightly-2024-08-02` with `rust-src` and `wasm32-unknown-unknown`, and `wasm-bindgen` CLI **0.2.100**. [Windows toolchain setup](benchmarks/README.md#build-từ-source)
+
+```powershell
+.\wasm-graphics\build.ps1
+Set-Location web
+npm.cmd ci --no-audit --no-fund
+npm.cmd run build -- --outDir ../wasm-graphics/target/web-interactive
+npm.cmd exec -- vite preview --host 127.0.0.1 --outDir ../wasm-graphics/target/web-interactive
+```
+
+Open the localhost URL printed by Vite. Select **Open benchmark** in the editor to try configurations A, B, and C. The threaded renderer requires cross-origin isolation and `SharedArrayBuffer`. Vite serves the required headers in dev and preview.
+
+## Credits
+
+The original engine, editor, and gallery are from [ElliottF05/3D-Graphics](https://github.com/ElliottF05/3D-Graphics). This version adds the controlled benchmark, deterministic sampling, and render progress and cancellation. The original project cites [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html) as an inspiration.
+
+[Repository About copy and topics](ABOUT.md)

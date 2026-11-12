@@ -15,16 +15,17 @@ import { useGameContext } from "@/gameContext";
 
 // A small helper to render a row of controls (+/- buttons for an axis)
 const AxisControlRow: React.FC<{
+    kind: 'position' | 'rotation';
     axisLabel: string;
     onDecrement: () => void;
     onIncrement: () => void;
     disabled?: boolean; // Added disabled prop
-}> = ({ axisLabel, onDecrement, onIncrement, disabled }) => (
+}> = ({ kind, axisLabel, onDecrement, onIncrement, disabled }) => (
     
     <div className="flex items-center space-x-2 py-1">
-        <Label htmlFor={`transform-${axisLabel.toLowerCase()}`} className={`w-5 text-xs uppercase ${disabled ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>{axisLabel}</Label>
+        <span className={`w-5 text-xs uppercase ${disabled ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>{axisLabel}</span>
         <Button 
-            id={`transform-${axisLabel.toLowerCase()}-decrement`} 
+            aria-label={`Decrease ${kind} ${axisLabel}`}
             variant="outline" 
             size="icon" 
             className="h-8 w-8" 
@@ -34,7 +35,7 @@ const AxisControlRow: React.FC<{
             <Minus className="h-4 w-4" />
         </Button>
         <Button 
-            id={`transform-${axisLabel.toLowerCase()}-increment`} 
+            aria-label={`Increase ${kind} ${axisLabel}`}
             variant="outline" 
             size="icon" 
             className="h-8 w-8" 
@@ -123,18 +124,21 @@ const TransformControls: React.FC<TransformControlsProps> = ({  }) => {
                         />
                     </div>
                     <AxisControlRow
+                        kind="position"
                         axisLabel="X"
                         onDecrement={() => handleTranslate('x', -1)}
                         onIncrement={() => handleTranslate('x', 1)}
                         disabled={followCamera} // Pass disabled state
                     />
                     <AxisControlRow
+                        kind="position"
                         axisLabel="Y"
                         onDecrement={() => handleTranslate('y', -1)}
                         onIncrement={() => handleTranslate('y', 1)}
                         disabled={followCamera} // Pass disabled state
                     />
                     <AxisControlRow
+                        kind="position"
                         axisLabel="Z"
                         onDecrement={() => handleTranslate('z', -1)}
                         onIncrement={() => handleTranslate('z', 1)}
@@ -158,16 +162,19 @@ const TransformControls: React.FC<TransformControlsProps> = ({  }) => {
                 <div className="space-y-2">
                     <Label className="text-sm font-medium">Rotation</Label>
                     <AxisControlRow
+                        kind="rotation"
                         axisLabel="X"
                         onDecrement={() => handleRotate('x', -1)}
                         onIncrement={() => handleRotate('x', 1)}
                     />
                     <AxisControlRow
+                        kind="rotation"
                         axisLabel="Y"
                         onDecrement={() => handleRotate('y', -1)}
                         onIncrement={() => handleRotate('y', 1)}
                     />
                     <AxisControlRow
+                        kind="rotation"
                         axisLabel="Z"
                         onDecrement={() => handleRotate('z', -1)}
                         onIncrement={() => handleRotate('z', 1)}

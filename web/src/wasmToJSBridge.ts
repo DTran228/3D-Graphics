@@ -5,6 +5,13 @@ import * as wasm from '@wasm/wasm_graphics'
  * These functions will typically update React state (e.g., via a Context).
  */
 export type GameStatus = 'Rasterizing' | 'Editing' | 'RayTracing';
+export type RenderProgress = {
+    phase: number;
+    samples: number;
+    target: number;
+    rowFraction: number;
+    elapsedMs: number;
+};
 export interface IWasmToJsBridge {
     updateSelectedObjMatProps: (props: wasm.MaterialProperties | null | undefined) => void;
     /**
@@ -16,6 +23,7 @@ export interface IWasmToJsBridge {
     updateFocalDistance: (focalDistance: number) => void;
     updateDofStrength: (dofStrength: number) => void;
     updateSceneLoading: (loading: boolean) => void;
+    updateRenderProgress: (phase: number, samples: number, target: number, rowFraction: number, elapsedMs: number) => void;
     // getGlbBytes: (url: string) => Promise<Uint8Array>;
 }
 
@@ -24,6 +32,7 @@ export interface IWasmToJsBridge {
  * Its methods will be implemented by our React Context provider to update UI state.
  */
 class WasmToJsBridge implements IWasmToJsBridge {
+    public updateRenderProgress: IWasmToJsBridge['updateRenderProgress'] = () => {};
     public updateSelectedObjMatProps: (props: wasm.MaterialProperties | null | undefined) => void = (props) => {
         console.warn("WasmToJsBridge.updateSelectedObjMatProps called before React context initialized it.", props);
     };

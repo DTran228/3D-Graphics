@@ -5,8 +5,9 @@ export function exit_edit_mode(): void;
 export function delete_selected_object(): void;
 export function set_follow_camera(follow_camera: boolean): void;
 export function set_selected_object_material_properties(props: MaterialProperties): void;
-export function enter_ray_tracing_mode(): void;
+export function enter_ray_tracing_mode(target_samples: number): void;
 export function stop_ray_tracing(): void;
+export function ray_thread_count(): number;
 export function translate_selected_obj(x: number, y: number, z: number): void;
 export function rotate_selected_obj(x: number, y: number, z: number): void;
 export function scale_selected_obj(scale_factor: number): void;
@@ -31,6 +32,16 @@ export function init_and_begin_game_loop(): void;
 export function load_glb_model(glb_bytes: Uint8Array): boolean;
 export function initThreadPool(num_threads: number): Promise<any>;
 export function wbg_rayon_start_worker(receiver: number): void;
+export class BenchmarkRender {
+  free(): void;
+  constructor(full: boolean, width: number, height: number, samples: number, depth: number, seed: number);
+  prepare(use_bvh: boolean): void;
+  step(): number;
+  triangle_count(): number;
+  scene_hash(): string;
+  rgba(): Uint8Array;
+  linear_rgb(): Float32Array;
+}
 export class MaterialProperties {
   free(): void;
   constructor(mat_is_editable: boolean, r: number, g: number, b: number, material_type: number, extra_prop: number);
@@ -52,6 +63,14 @@ export class wbg_rayon_PoolBuilder {
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
+  readonly __wbg_benchmarkrender_free: (a: number, b: number) => void;
+  readonly benchmarkrender_new: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+  readonly benchmarkrender_prepare: (a: number, b: number) => void;
+  readonly benchmarkrender_step: (a: number) => number;
+  readonly benchmarkrender_triangle_count: (a: number) => number;
+  readonly benchmarkrender_scene_hash: (a: number) => [number, number];
+  readonly benchmarkrender_rgba: (a: number) => [number, number];
+  readonly benchmarkrender_linear_rgb: (a: number) => [number, number];
   readonly __wbg_materialproperties_free: (a: number, b: number) => void;
   readonly __wbg_get_materialproperties_mat_is_editable: (a: number) => number;
   readonly __wbg_set_materialproperties_mat_is_editable: (a: number, b: number) => void;
@@ -71,8 +90,9 @@ export interface InitOutput {
   readonly delete_selected_object: () => void;
   readonly set_follow_camera: (a: number) => void;
   readonly set_selected_object_material_properties: (a: number) => void;
-  readonly enter_ray_tracing_mode: () => void;
+  readonly enter_ray_tracing_mode: (a: number) => void;
   readonly stop_ray_tracing: () => void;
+  readonly ray_thread_count: () => number;
   readonly translate_selected_obj: (a: number, b: number, c: number) => void;
   readonly rotate_selected_obj: (a: number, b: number, c: number) => void;
   readonly scale_selected_obj: (a: number) => void;
@@ -109,8 +129,9 @@ export interface InitOutput {
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_export_7: WebAssembly.Table;
-  readonly closure284_externref_shim: (a: number, b: number, c: any) => void;
-  readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h3c31e5190cd52939: (a: number, b: number) => void;
+  readonly __externref_table_dealloc: (a: number) => void;
+  readonly closure280_externref_shim: (a: number, b: number, c: any) => void;
+  readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__ha85bed4a0d046435: (a: number, b: number) => void;
   readonly __wbindgen_thread_destroy: (a?: number, b?: number, c?: number) => void;
   readonly __wbindgen_start: (a: number) => void;
 }

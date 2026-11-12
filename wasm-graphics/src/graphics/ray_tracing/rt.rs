@@ -1,10 +1,10 @@
-use std::{cell::RefCell, f32::consts::PI, fmt::Debug, sync::RwLock};
+use std::{f32::consts::PI, fmt::Debug, sync::RwLock};
 
 use rayon::prelude::*;
 
-use crate::{console_log, graphics::{buffers::{PixelBuf, ZBuffer}, camera::Camera, game::GameStatus, lighting::Light, scene_object::SceneObject}, utils::{math::{degrees_to_radians, Vec3}, utils::{gamma_correct_color, get_time, random_float, random_range, sample_circle, sample_square}}};
+use crate::{graphics::scene_object::SceneObject, utils::{math::{degrees_to_radians, Vec3}, utils::{random_float, random_range, sample_circle, sample_square, with_sample_random}}};
 
-use super::{super::{game::Game, mesh::{Mesh, PhongProperties}}, bvh::BVHNode, hittable::{Hittable, Sphere, Triangle}, material::{Dielectric, DiffuseLight, Lambertian, Material, Metal}};
+use super::{super::{game::Game, mesh::{Mesh, PhongProperties}}, bvh::RayScene, material::{Dielectric, Lambertian, Material, Metal}};
 
 // const SAMPLES: usize = 10; // 10
 // const MAX_DEPTH: usize = 10; // 10
@@ -43,142 +43,35 @@ impl HitRecord<'_> {
 
 impl Game {
 
-    pub fn render_ray_tracing(&mut self) {
+    /// Render a bounded set of rows for one sample, then advance the cursor.
+    pub fn render_sample_rows(&mut self, rows: usize) {
+        let first = self.ray_next_row;
+        let end = (first + rows).min(self.camera.height);
+        let samples = self.ray_samples_accumulated;
+        let scene = self.ray_scene.as_ref().expect("Prepare ray geometry before rendering");
+        let width = self.camera.width;
+        let sample_offset = samples as u64 * width as u64 * self.camera.height as u64;
 
-        // BENCHMARKING
-        // perf tips here: https://users.rust-lang.org/t/peter-shirleys-ray-tracing-in-one-weekend-implementation-in-rust/26972/11
-
-        // benchmark conditions:
-        // scene: create_rt_test_scene_spheres()
-        // samples: 10
-        // max_depth: 10
-        // also: dev console closed in browser
-
-        // first version after finishing rt in one weekend, no performance improvements
-        // 22.65 second average
-
-        // after removing new box clone (heap allocation) on object.hit() in favor of lifetimes (ooh)
-        // 21.83 seconds avg (barely faster lol)
-
-        // after switching recursion to iteration in ray_trace()
-        // 20.49 seconds avg
-
-        // after removing dynamic dispatch: 
-        // 7.80 seconds avg!!!
-
-        // after adding #[inline(always)] to SceneObject::hit()
-        // 6.10 second avg!
-
-        // after removing indirection for Vec3 functions (and inlining them though compiler probably did this anyway)
-        // 5.47 second avg
-
-        // after adding bvh
-        // 2.92 second avg
-
-        // next steps?
-        // 1) look into improving cache locality by have the BVH tree hold indexes into a Vec<SceneObject> 
-        //      - this is called a flattened bvh tree
-        // 2) Multi-threading (duh)
-
-        // New baseline (after adding MIS, russian roulette, and UI; still same test scene):
-        // 2.59 second avg
-
-        // After adding FlattenedBVH:
-        // 2.398 second avg
-
-        // After adding Rayon parallelism:
-        // 0.720 second avg
-
-        if self.bvh.is_none() {
-            console_log!("No RT objects in the scene, can't raytrace!");
-            return;
-        }
-
-        console_log!("Rendering ray tracing");
-
-        let start_time = get_time();
-        let samples_per_pixel_per_pass = 1;
-
-        loop {
-
-            self.ray_samples_accumulated += samples_per_pixel_per_pass;
-
-            (0..self.camera.height).into_par_iter().for_each(|y| {
-                let mut pixel_row = self.pixel_buf.get_row_guard(y).lock().unwrap();
-                for x in 0..pixel_row.len() {
-
-                    let mut new_color = Vec3::zero();
-                    for _ in 0..samples_per_pixel_per_pass {
-                        let ray = self.get_rand_ray_at_pixel_with_defocus(x, y);
-                        // let ray_color = self.ray_trace(ray, self.ray_max_depth);
-                        let ray_color = self.ray_trace_mis(ray, self.ray_max_depth);
-                        new_color += ray_color;
-                    }
-
-                    let existing_color = pixel_row[x];
-                    let updated_color = (
-                        existing_color * (self.ray_samples_accumulated as f32 - samples_per_pixel_per_pass as f32)
-                        + new_color * samples_per_pixel_per_pass as f32)
-                        / self.ray_samples_accumulated as f32;
-
-                    pixel_row[x] = updated_color;
-                }
-            });
-
-            let curr_time = get_time();
-            if curr_time - start_time > 0.5 {
-                break;
+        (first..end).into_par_iter().for_each(|y| {
+            let mut row = self.pixel_buf.get_row_guard(y).lock().unwrap();
+            for (x, pixel) in row.iter_mut().enumerate() {
+                let sample_index = sample_offset + (y * width + x) as u64;
+                let color = with_sample_random(self.ray_seed, sample_index, || {
+                    let ray = self.get_rand_ray_at_pixel_with_defocus(x, y);
+                    self.ray_trace_mis(scene, ray, self.ray_max_depth)
+                });
+                *pixel = (*pixel * samples as f32 + color) / (samples + 1) as f32;
             }
+        });
+
+        self.ray_next_row = end;
+        if end == self.camera.height {
+            self.ray_next_row = 0;
+            self.ray_samples_accumulated += 1;
         }
     }
 
-    fn ray_trace(&self, mut ray: Ray, mut depth: usize) -> Vec3 {
-
-        // start with identity for multiplication = 1
-        let mut pixel_color = Vec3::new(1.0, 1.0, 1.0);
-
-        while depth > 0 {
-            depth -= 1;
-            let mut hit_record = HitRecord::default();
-            let mut hit_anything = false;
-
-            if self.bvh.as_ref().unwrap().hit(&ray, 0.001, 5000.0, &mut hit_record) {
-                hit_anything = true;
-            }
-
-            if hit_anything {
-                let successful_scatter;
-                let attenuation;
-                let scattered_ray;
-
-                if let Some(material) = hit_record.material {
-
-                    let emitted_color = material.emitted(&hit_record);
-                    (successful_scatter, attenuation, scattered_ray) = material.scatter(&ray, &hit_record);
-                    if successful_scatter {
-                        pixel_color += emitted_color;
-                        pixel_color.mul_elementwise_inplace(attenuation);
-                        ray = scattered_ray;
-                    } else {
-                        return pixel_color.mul_elementwise(emitted_color);
-                        // no scatter, terminate here with current emitted color
-                    }
-
-                } else {
-                    return Vec3::zero(); // no material, return black
-                }
-
-            } else { // if hit_anything == false, then ray hit nothing, goes off into sky
-                let sky_color = self.get_rt_sky_color(&ray.direction.normalized());
-                return pixel_color.mul_elementwise(sky_color);
-            }
-        }
-
-        // max depth reached, return black
-        return Vec3::zero();
-    }
-
-    fn ray_trace_mis(&self, mut ray: Ray, mut depth: usize) -> Vec3 {
+    fn ray_trace_mis(&self, scene: &RayScene, mut ray: Ray, mut depth: usize) -> Vec3 {
 
         let use_direct = true;
 
@@ -193,7 +86,7 @@ impl Game {
             let mut hit_anything = false;
 
             // russian-roulette optimization
-            if depth >= self.ray_max_depth - 3 {
+            if depth >= self.ray_max_depth.saturating_sub(3) {
                 // skip russian roulette on first bounces
             } else {
                 // use luminance
@@ -205,7 +98,7 @@ impl Game {
                 throughput /= p_continue;
             }
 
-            if self.bvh.as_ref().unwrap().hit(&ray, 0.001, 5000.0, &mut hit_record) {
+            if scene.hit(&ray, 0.001, 5000.0, &mut hit_record) {
                 hit_anything = true;
             }
 
@@ -225,7 +118,7 @@ impl Game {
                         if use_direct {
                             if let Some((direct_attenuation, shadow_ray, light_dist)) = light_sampling_option {
                                 let mut shadow_ray_hit_record = HitRecord::default();
-                                let light_is_occluded = self.bvh.as_ref().unwrap().hit(&shadow_ray, 0.001, light_dist - 0.001, &mut shadow_ray_hit_record);
+                                let light_is_occluded = scene.hit(&shadow_ray, 0.001, light_dist - 0.001, &mut shadow_ray_hit_record);
                                 if !light_is_occluded {
                                     direct_lighting = direct_attenuation;
                                 }

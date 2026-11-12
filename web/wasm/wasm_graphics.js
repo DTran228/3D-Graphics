@@ -201,6 +201,26 @@ function debugString(val) {
     return className;
 }
 
+function takeFromExternrefTable0(idx) {
+    const value = wasm.__wbindgen_export_3.get(idx);
+    wasm.__externref_table_dealloc(idx);
+    return value;
+}
+
+let cachedFloat32ArrayMemory0 = null;
+
+function getFloat32ArrayMemory0() {
+    if (cachedFloat32ArrayMemory0 === null || cachedFloat32ArrayMemory0.buffer !== wasm.memory.buffer) {
+        cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
+    }
+    return cachedFloat32ArrayMemory0;
+}
+
+function getArrayF32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
 export function enter_edit_mode() {
     wasm.enter_edit_mode();
 }
@@ -234,12 +254,23 @@ export function set_selected_object_material_properties(props) {
     wasm.set_selected_object_material_properties(ptr0);
 }
 
-export function enter_ray_tracing_mode() {
-    wasm.enter_ray_tracing_mode();
+/**
+ * @param {number} target_samples
+ */
+export function enter_ray_tracing_mode(target_samples) {
+    wasm.enter_ray_tracing_mode(target_samples);
 }
 
 export function stop_ray_tracing() {
     wasm.stop_ray_tracing();
+}
+
+/**
+ * @returns {number}
+ */
+export function ray_thread_count() {
+    const ret = wasm.ray_thread_count();
+    return ret >>> 0;
 }
 
 /**
@@ -438,11 +469,100 @@ export function wbg_rayon_start_worker(receiver) {
 }
 
 function __wbg_adapter_22(arg0, arg1, arg2) {
-    wasm.closure284_externref_shim(arg0, arg1, arg2);
+    wasm.closure280_externref_shim(arg0, arg1, arg2);
 }
 
 function __wbg_adapter_25(arg0, arg1) {
-    wasm._dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h3c31e5190cd52939(arg0, arg1);
+    wasm._dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__ha85bed4a0d046435(arg0, arg1);
+}
+
+const BenchmarkRenderFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_benchmarkrender_free(ptr >>> 0, 1));
+
+export class BenchmarkRender {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        BenchmarkRenderFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_benchmarkrender_free(ptr, 0);
+    }
+    /**
+     * @param {boolean} full
+     * @param {number} width
+     * @param {number} height
+     * @param {number} samples
+     * @param {number} depth
+     * @param {number} seed
+     */
+    constructor(full, width, height, samples, depth, seed) {
+        const ret = wasm.benchmarkrender_new(full, width, height, samples, depth, seed);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        BenchmarkRenderFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {boolean} use_bvh
+     */
+    prepare(use_bvh) {
+        wasm.benchmarkrender_prepare(this.__wbg_ptr, use_bvh);
+    }
+    /**
+     * @returns {number}
+     */
+    step() {
+        const ret = wasm.benchmarkrender_step(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    triangle_count() {
+        const ret = wasm.benchmarkrender_triangle_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {string}
+     */
+    scene_hash() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.benchmarkrender_scene_hash(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    rgba() {
+        const ret = wasm.benchmarkrender_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    linear_rgb() {
+        const ret = wasm.benchmarkrender_linear_rgb(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
 }
 
 const MaterialPropertiesFinalization = (typeof FinalizationRegistry === 'undefined')
@@ -849,6 +969,9 @@ function __wbg_get_imports() {
     imports.wbg.__wbg_updateGameStatus_90e602e4cb6a2474 = function(arg0) {
         wasmToJsBridge.updateGameStatus(arg0 >>> 0);
     };
+    imports.wbg.__wbg_updateRenderProgress_68c5f1e81c7fccd3 = function(arg0, arg1, arg2, arg3, arg4) {
+        wasmToJsBridge.updateRenderProgress(arg0 >>> 0, arg1 >>> 0, arg2 >>> 0, arg3, arg4);
+    };
     imports.wbg.__wbg_updateSceneLoading_0450d9222f91b994 = function(arg0) {
         wasmToJsBridge.updateSceneLoading(arg0 !== 0);
     };
@@ -871,12 +994,12 @@ function __wbg_get_imports() {
         const ret = false;
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper637 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 285, __wbg_adapter_22);
+    imports.wbg.__wbindgen_closure_wrapper635 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 281, __wbg_adapter_22);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper639 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 285, __wbg_adapter_25);
+    imports.wbg.__wbindgen_closure_wrapper637 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 281, __wbg_adapter_25);
         return ret;
     };
     imports.wbg.__wbindgen_debug_string = function(arg0, arg1) {
@@ -927,6 +1050,7 @@ function __wbg_finalize_init(instance, module, thread_stack_size) {
     wasm = instance.exports;
     __wbg_init.__wbindgen_wasm_module = module;
     cachedDataViewMemory0 = null;
+    cachedFloat32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
 
     if (typeof thread_stack_size !== 'undefined' && (typeof thread_stack_size !== 'number' || thread_stack_size === 0 || thread_stack_size % 65536 !== 0)) { throw 'invalid stack size' }

@@ -1,4 +1,4 @@
-use rand::{distr::{uniform::SampleRange, Uniform}, rngs::ThreadRng, Rng};
+use std::cell::Cell;
 
 use crate::graphics::mesh::Mesh;
 
@@ -13,12 +13,45 @@ pub fn get_time() -> f64 {
         .now()
 }
 
-// RAND UTILITIES
+thread_local! {
+    static SAMPLE_RANDOM: Cell<Option<u64>> = const { Cell::new(None) };
+}
+
+fn mix_bits(mut bits: u64) -> u64 {
+    bits = (bits ^ (bits >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    bits = (bits ^ (bits >> 27)).wrapping_mul(0x94d049bb133111eb);
+    bits ^ (bits >> 31)
+}
+
+/// The camera, material and light helpers share this sample's SplitMix64 stream.
+pub fn with_sample_random<T>(seed: u32, sample_index: u64, sample: impl FnOnce() -> T) -> T {
+    SAMPLE_RANDOM.with(|state| {
+        struct Restore<'a>(&'a Cell<Option<u64>>, Option<u64>);
+        impl Drop for Restore<'_> {
+            fn drop(&mut self) { self.0.set(self.1); }
+        }
+        let initial = mix_bits(sample_index ^ ((seed as u64) << 32));
+        let _restore = Restore(state, state.replace(Some(initial)));
+        sample()
+    })
+}
+
+#[inline]
+fn random_bits() -> u64 {
+    SAMPLE_RANDOM.with(|state| {
+        if let Some(previous) = state.get() {
+            let next = previous.wrapping_add(0x9e3779b97f4a7c15);
+            state.set(Some(next));
+            mix_bits(next)
+        } else {
+            rand::random()
+        }
+    })
+}
+
 #[inline(always)]
 pub fn random_float() -> f32 {
-    // let mut rng = rand::rng();
-    // return rng.random();
-    return rand::random::<f32>();
+    (random_bits() >> 40) as f32 * (1.0 / 16_777_216.0)
 }
 #[inline(always)]
 pub fn random_range(min: f32, max: f32) -> f32 {
@@ -26,9 +59,15 @@ pub fn random_range(min: f32, max: f32) -> f32 {
 }
 /// Samples uniformly from the range [low, high]
 pub fn random_int(min: i32, max: i32) -> i32 {
-    let distr = Uniform::new_inclusive(min, max).expect("rand::distr::Uniform::new_inclusive failed");
-    let mut rng = rand::rng();
-    return rng.sample(distr);
+    assert!(min <= max);
+    let count = (i64::from(max) - i64::from(min) + 1) as u64;
+    let threshold = count.wrapping_neg() % count;
+    loop {
+        let bits = random_bits();
+        if bits >= threshold {
+            return (i64::from(min) + (bits % count) as i64) as i32;
+        }
+    }
 }
 /// Samples points in a square in the range [-0.5, 0.5].
 #[inline(always)]

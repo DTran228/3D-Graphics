@@ -1,0 +1,21 @@
+{
+  "isolated": true,
+  "sharedArrayBuffer": "function",
+  "hardwareConcurrency": 12,
+  "browser": "Chrome/157.0.8103.51",
+  "workers": "Rayon workers 1/1 · Browser reports 12",
+  "steps": [
+    "initial",
+    "add-box",
+    "translate",
+    "rotate-x",
+    "scale",
+    "material",
+    "camera-fov",
+    "camera-move",
+    "import-glb",
+    "restart-after-cancel"
+  ],
+  "cancelled": true,
+  "repeatImageExact": true
+}

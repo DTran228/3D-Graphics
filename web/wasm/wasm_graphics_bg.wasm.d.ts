@@ -1,5 +1,13 @@
 /* tslint:disable */
 /* eslint-disable */
+export const __wbg_benchmarkrender_free: (a: number, b: number) => void;
+export const benchmarkrender_new: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+export const benchmarkrender_prepare: (a: number, b: number) => void;
+export const benchmarkrender_step: (a: number) => number;
+export const benchmarkrender_triangle_count: (a: number) => number;
+export const benchmarkrender_scene_hash: (a: number) => [number, number];
+export const benchmarkrender_rgba: (a: number) => [number, number];
+export const benchmarkrender_linear_rgb: (a: number) => [number, number];
 export const __wbg_materialproperties_free: (a: number, b: number) => void;
 export const __wbg_get_materialproperties_mat_is_editable: (a: number) => number;
 export const __wbg_set_materialproperties_mat_is_editable: (a: number, b: number) => void;
@@ -19,8 +27,9 @@ export const exit_edit_mode: () => void;
 export const delete_selected_object: () => void;
 export const set_follow_camera: (a: number) => void;
 export const set_selected_object_material_properties: (a: number) => void;
-export const enter_ray_tracing_mode: () => void;
+export const enter_ray_tracing_mode: (a: number) => void;
 export const stop_ray_tracing: () => void;
+export const ray_thread_count: () => number;
 export const translate_selected_obj: (a: number, b: number, c: number) => void;
 export const rotate_selected_obj: (a: number, b: number, c: number) => void;
 export const scale_selected_obj: (a: number) => void;
@@ -57,7 +66,8 @@ export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
 export const __wbindgen_export_7: WebAssembly.Table;
-export const closure284_externref_shim: (a: number, b: number, c: any) => void;
-export const _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h3c31e5190cd52939: (a: number, b: number) => void;
+export const __externref_table_dealloc: (a: number) => void;
+export const closure280_externref_shim: (a: number, b: number, c: any) => void;
+export const _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__ha85bed4a0d046435: (a: number, b: number) => void;
 export const __wbindgen_thread_destroy: (a?: number, b?: number, c?: number) => void;
 export const __wbindgen_start: (a: number) => void;

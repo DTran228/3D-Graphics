@@ -96,41 +96,29 @@ impl AABoundingBox {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn hit(&self, ray: &Ray, mut t_min: f32, mut t_max: f32) -> bool {
-
-        // ray.origin + t * ray.direction = pos
-        // t = (pos - ray.origin) / ray.direction
-        
-        let ray_dir_inv = 1.0 / ray.direction.x;
-        let mut t0 = (self.min.x - ray.origin.x) * ray_dir_inv;
-        let mut t1 = (self.max.x - ray.origin.x) * ray_dir_inv;
-        (t0, t1) = (t0.min(t1), t0.max(t1));
-        (t_min, t_max) = (t_min.max(t0), t_max.min(t1));
-
-        if t_min > t_max {
-            return false;
+        let axes = [
+            (ray.origin.x, ray.direction.x, self.min.x, self.max.x),
+            (ray.origin.y, ray.direction.y, self.min.y, self.max.y),
+            (ray.origin.z, ray.direction.z, self.min.z, self.max.z),
+        ];
+        for (origin, direction, min, max) in axes {
+            if direction == 0.0 {
+                if origin < min || origin > max {
+                    return false;
+                }
+                continue;
+            }
+            let near = (min - origin) / direction;
+            let far = (max - origin) / direction;
+            t_min = t_min.max(near.min(far));
+            t_max = t_max.min(near.max(far));
+            if t_min > t_max {
+                return false;
+            }
         }
-
-        let ray_dir_inv = 1.0 / ray.direction.y;
-        let mut t0 = (self.min.y - ray.origin.y) * ray_dir_inv;
-        let mut t1 = (self.max.y - ray.origin.y) * ray_dir_inv;
-        (t0, t1) = (t0.min(t1), t0.max(t1));
-        (t_min, t_max) = (t_min.max(t0), t_max.min(t1));
-
-        if t_min > t_max {
-            return false;
-        }
-
-        let ray_dir_inv = 1.0 / ray.direction.z;
-        let mut t0 = (self.min.z - ray.origin.z) * ray_dir_inv;
-        let mut t1 = (self.max.z - ray.origin.z) * ray_dir_inv;
-        (t0, t1) = (t0.min(t1), t0.max(t1));
-        (t_min, t_max) = (t_min.max(t0), t_max.min(t1));
-        
-
-        return t_min <= t_max;
-
+        true
     }
 }
 
@@ -226,6 +214,34 @@ thread_local! {
     static TRAVERSAL_STACK: RefCell<Vec<usize>> = RefCell::new(Vec::with_capacity(1024));
 }
 
+pub enum RayScene {
+    BruteForce(Vec<Box<dyn Hittable>>),
+    Bvh(FlattenedBVH),
+}
+
+impl RayScene {
+    #[inline]
+    pub fn hit<'a>(&'a self, ray: &Ray, min: f32, mut max: f32, record: &mut HitRecord<'a>) -> bool {
+        if max < min {
+            return false;
+        }
+        match self {
+            Self::Bvh(tree) => tree.hit(ray, min, max, record),
+            Self::BruteForce(objects) => {
+                let mut hit = false;
+                for object in objects {
+                    // Both traversals choose the later scene primitive on an exact tie.
+                    if object.hit(ray, min, max, record) {
+                        max = record.t;
+                        hit = true;
+                    }
+                }
+                hit
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct FlattenedBVH {
     nodes: Vec<FlattenedBVHNode>,
@@ -233,64 +249,45 @@ pub struct FlattenedBVH {
 }
 
 impl FlattenedBVH {
-    pub fn new(mut hittables: Vec<Box<dyn Hittable>>) -> Self {
+    pub fn new(hittables: Vec<Box<dyn Hittable>>) -> Self {
+        let mut indices: Vec<_> = (0..hittables.len()).collect();
         let mut flattened_bvh = FlattenedBVH {
-            nodes: Vec::with_capacity(2 * hittables.len()),
-            hittables: Vec::with_capacity(hittables.len()),
+            nodes: Vec::with_capacity(2 * indices.len()),
+            hittables,
         };
 
-        flattened_bvh.build(&mut hittables, 0);
-        flattened_bvh.hittables = hittables;
-        console_log!("flattened bvh built with {} nodes, {} hittables", flattened_bvh.nodes.len(), flattened_bvh.hittables.len());
+        if !indices.is_empty() {
+            flattened_bvh.build(&mut indices);
+        }
         return flattened_bvh;
     }
 
-    fn build(&mut self, hittables: &mut [Box<dyn Hittable>], base_index: usize) -> usize {
-
-        // empty node
-        if hittables.is_empty() {
-            return MAX;
-        }
-
+    fn build(&mut self, indices: &mut [usize]) -> usize {
         // leaf node
-        if hittables.len() == 1 {
-            let mut bounding_box = hittables[0].get_bounding_box().clone();
-            bounding_box.pad_to_minimums();
-            // self.hittables.push(hittables[0].clone_box());
-            // let idx = self.hittables.len() - 1;
-            let node = FlattenedBVHNode::Leaf { 
-                bounding_box, 
-                hittable_index: base_index
-            };
-            self.nodes.push(node);
+        if indices.len() == 1 {
+            self.nodes.push(FlattenedBVHNode::Leaf { hittable_index: indices[0] });
             return self.nodes.len() - 1;
         }
 
         // internal node
         let mut bounding_box = AABoundingBox::empty();
-        for hittable in hittables.iter() {
-            bounding_box = AABoundingBox::from_sub_boxes(&bounding_box, hittable.get_bounding_box());
+        for &index in indices.iter() {
+            bounding_box = AABoundingBox::from_sub_boxes(&bounding_box, self.hittables[index].get_bounding_box());
         }
         bounding_box.pad_to_minimums();
 
         let axis = bounding_box.get_longest_axis();
-        hittables.sort_by(|obj1, obj2| {
-            let c1 = obj1.get_bounding_box().get_center();
-            let c2 = obj2.get_bounding_box().get_center();
-            match axis {
-                0 => (c1.x).partial_cmp(&c2.x).unwrap(),
-                1 => (c1.y).partial_cmp(&c2.y).unwrap(),
-                2 => (c1.z).partial_cmp(&c2.z).unwrap(),
-                _ => unreachable!("invalid axis to sort by"),
-            }
+        let center_on_axis = |index: usize| {
+            let center = self.hittables[index].get_bounding_box().get_center();
+            [center.x, center.y, center.z][axis as usize]
+        };
+        indices.sort_unstable_by(|&left, &right| {
+            center_on_axis(left).total_cmp(&center_on_axis(right)).then(left.cmp(&right))
         });
         
-        let mid = hittables.len() / 2;
-
-        let (left_vec, right_vec) = hittables.split_at_mut(mid);
-
-        let left_child_index = self.build(left_vec, base_index);
-        let right_child_index = self.build(right_vec, base_index + mid);
+        let (left, right) = indices.split_at_mut(indices.len() / 2);
+        let left_child_index = self.build(left);
+        let right_child_index = self.build(right);
 
         let node = FlattenedBVHNode::Internal { 
             bounding_box, 
@@ -304,7 +301,11 @@ impl FlattenedBVH {
     #[inline(always)]
     pub fn hit<'a>(&'a self, ray: &Ray, t_min: f32, mut t_max: f32, hit_record: &mut HitRecord<'a>) -> bool {
 
-        let mut hit_anything = false;
+        if self.nodes.is_empty() {
+            return false;
+        }
+        let mut winner = None;
+        let mut candidate = HitRecord::default();
 
         TRAVERSAL_STACK.with(|stack_cell| {
             let mut stack = stack_cell.borrow_mut();
@@ -317,10 +318,13 @@ impl FlattenedBVH {
                 }
                 let node = &self.nodes[node_index];
                 match node {
-                    FlattenedBVHNode::Leaf { bounding_box: _, hittable_index } => {
-                        if self.hittables[*hittable_index].hit(ray, t_min, t_max, hit_record) {
-                            t_max = hit_record.t; // update closest hit so far
-                            hit_anything = true;
+                    FlattenedBVHNode::Leaf { hittable_index } => {
+                        if self.hittables[*hittable_index].hit(ray, t_min, t_max, &mut candidate)
+                            && (candidate.t < t_max || winner.is_none() || Some(*hittable_index) > winner)
+                        {
+                            t_max = candidate.t;
+                            winner = Some(*hittable_index);
+                            std::mem::swap(hit_record, &mut candidate);
                         }
                     },
                     FlattenedBVHNode::Internal { bounding_box, left_index, right_index } => {
@@ -334,19 +338,65 @@ impl FlattenedBVH {
 
         });
 
-        return hit_anything;
+        winner.is_some()
     }
 }
 
 #[derive(Debug)]
 pub enum FlattenedBVHNode {
     Leaf {
-        bounding_box: AABoundingBox,
         hittable_index: usize,
     },
     Internal {
         bounding_box: AABoundingBox,
         left_index: usize,
         right_index: usize,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graphics::ray_tracing::{hittable::{Sphere, Triangle}, material::{Lambertian, Metal}};
+
+    fn assert_hit(objects: Vec<Box<dyn Hittable>>, ray: Ray, max: f32, expected: Option<(f32, u32)>) {
+        let bvh = RayScene::Bvh(FlattenedBVH::new(objects.iter().map(|object| object.clone_box()).collect()));
+        let brute = RayScene::BruteForce(objects);
+        for scene in [brute, bvh] {
+            let mut record = HitRecord::default();
+            assert_eq!(scene.hit(&ray, 0.001, max, &mut record), expected.is_some());
+            if let Some((t, material)) = expected {
+                assert!((record.t - t).abs() < 1e-5, "expected {t}, got {}", record.t);
+                assert_eq!(record.material.unwrap().get_material_number(), material);
+            }
+        }
+    }
+
+    #[test]
+    fn empty_and_bounded_rays() {
+        let ray = Ray::new(Vec3::zero(), Vec3::new(1.0, 0.0, 0.0));
+        assert_hit(vec![], ray.clone(), 100.0, None);
+        let sphere = Sphere::new(Vec3::new(4.0, 0.0, 0.0), 1.0, Vec3::ones(), Box::new(Lambertian::default()));
+        assert_hit(vec![sphere.clone_box()], ray.clone(), 2.999, None);
+        assert_hit(vec![sphere.clone_box()], ray, 3.0, Some((3.0, 1)));
+    }
+
+    #[test]
+    fn transformed_triangle_and_exact_tie() {
+        let mut triangle = Triangle::new_from_vertices(
+            Vec3::zero(), Vec3::new(2.0, 0.0, 0.0), Vec3::new(0.0, 2.0, 0.0),
+            Vec3::ones(), &Lambertian::default(),
+        );
+        triangle.rotate_around(Vec3::zero(), std::f32::consts::FRAC_PI_2, 0.0);
+        triangle.scale_around(Vec3::zero(), 2.0);
+        triangle.translate_by(Vec3::new(4.0, -2.0, 3.0));
+        let target = triangle.origin + 0.25 * (triangle.u + triangle.v);
+        let ray = Ray::new(target + Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0));
+        let mut tied = triangle.clone();
+        tied.set_material(Box::new(Metal::default()));
+        let farther = Sphere::new(target - Vec3::new(0.0, 0.0, 3.0), 1.0, Vec3::ones(), Box::new(Lambertian::default()));
+        assert_hit(vec![farther.clone_box(), triangle.clone_box(), tied.clone_box()], ray.clone(), 8.0, Some((5.0, 2)));
+        assert_hit(vec![tied.clone_box(), farther.clone_box(), triangle.clone_box()], ray.clone(), 8.0, Some((5.0, 1)));
+        assert_hit(vec![farther.clone_box(), triangle.clone_box()], ray, 4.99, None);
     }
 }

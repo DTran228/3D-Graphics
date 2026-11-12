@@ -14,7 +14,7 @@ use web_sys::KeyboardEvent;
 use web_sys::MouseEvent;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, Window};
 
-use crate::graphics::game::Game;
+use crate::graphics::game::{Game, GameStatus};
 use crate::utils::math::radians_to_degrees;
 use crate::utils::math::Vec3;
 use crate::utils::utils::color_to_u32;
@@ -110,6 +110,9 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["wasmToJsBridge"], js_name = updateSceneLoading)]
     pub fn js_update_scene_loading(loading: bool);
 
+    #[wasm_bindgen(js_namespace = wasmToJsBridge, js_name = updateRenderProgress)]
+    pub fn js_update_render_progress(phase: u32, samples: usize, target: usize, row_fraction: f64, elapsed_ms: f64);
+
 }
 
 // EXPOSING RUST FUNCTIONS TO JS
@@ -146,9 +149,9 @@ pub fn set_selected_object_material_properties(props: MaterialProperties) {
     });
 }
 #[wasm_bindgen]
-pub fn enter_ray_tracing_mode() {
+pub fn enter_ray_tracing_mode(target_samples: usize) {
     GAME_INSTANCE.with(|game_instance| {
-        game_instance.borrow_mut().enter_ray_tracing_mode();
+        game_instance.borrow_mut().enter_ray_tracing_mode(target_samples);
     });
 }
 #[wasm_bindgen]
@@ -156,6 +159,11 @@ pub fn stop_ray_tracing() {
     GAME_INSTANCE.with(|game_instance| {
         game_instance.borrow_mut().stop_ray_tracing();
     });
+}
+
+#[wasm_bindgen]
+pub fn ray_thread_count() -> usize {
+    rayon::current_num_threads()
 }
 #[wasm_bindgen]
 pub fn translate_selected_obj(x: f32, y: f32, z: f32) {
@@ -217,20 +225,25 @@ pub fn set_defocus_angle(defocus_angle: f32) {
     });
 }
 
+fn edit_scene(edit: impl FnOnce(&mut Game)) {
+    GAME_INSTANCE.with(|instance| {
+        let mut game = instance.borrow_mut();
+        if game.status == GameStatus::RasterizingNoLighting {
+            edit(&mut game);
+        }
+    });
+}
+
 // loading scenes
 #[wasm_bindgen]
 pub fn load_scene_random_spheres() {
-    GAME_INSTANCE.with(|game_instance| {
-        game_instance.borrow_mut().create_rt_test_scene_spheres();
-    });
+    edit_scene(|game| game.create_rt_test_scene_spheres());
 }
 #[wasm_bindgen]
 pub fn load_scene_fantasy_book(glb_bytes: Option<Vec<u8>>) {
     if let Some(bytes) = glb_bytes {
         console_log!("wasm.rs: load_scene_fantasy_book");
-        GAME_INSTANCE.with(|game_instance| {
-            game_instance.borrow_mut().load_scene_fantasy_book(&bytes);
-        });
+        edit_scene(|game| game.load_scene_fantasy_book(&bytes));
         return;
     } else {
         console_error!("wasm.rs: load_scene_fantasy_book failed, bytes are None");
@@ -240,9 +253,7 @@ pub fn load_scene_fantasy_book(glb_bytes: Option<Vec<u8>>) {
 pub fn load_scene_magic_bridge(glb_bytes: Option<Vec<u8>>) {
     if let Some(bytes) = glb_bytes {
         console_log!("wasm.rs: load_scene_magic_bridge");
-        GAME_INSTANCE.with(|game_instance| {
-            game_instance.borrow_mut().load_scene_magic_bridge(&bytes);
-        });
+        edit_scene(|game| game.load_scene_magic_bridge(&bytes));
         return;
     } else {
         console_error!("wasm.rs: load_scene_magic_bridge failed, bytes are None");
@@ -250,34 +261,26 @@ pub fn load_scene_magic_bridge(glb_bytes: Option<Vec<u8>>) {
 }
 #[wasm_bindgen]
 pub fn load_scene_cornell_box() {
-    GAME_INSTANCE.with(|game_instance| {
-        game_instance.borrow_mut().create_rt_test_scene_cornell();
-    });
+    edit_scene(|game| game.create_rt_test_scene_cornell());
 }
 #[wasm_bindgen]
 pub fn load_scene_cornell_box_extra(stl_bytes: Option<Vec<u8>>) {
     if let Some(bytes) = stl_bytes {
         console_log!("wasm.rs: load_scene_cornell_box_extra");
-        GAME_INSTANCE.with(|game_instance| {
-            game_instance.borrow_mut().create_rt_test_scene_cornell_plus_plus(&bytes);
-        });
+        edit_scene(|game| game.create_rt_test_scene_cornell_plus_plus(&bytes));
     } else {
         console_error!("wasm.rs: load_scene_cornell_box_extra failed, bytes are None");
     }
 }
 #[wasm_bindgen]
 pub fn load_scene_simple_light() {
-    GAME_INSTANCE.with(|game_instance| {
-        game_instance.borrow_mut().create_rt_test_scene_simple_light();
-    });
+    edit_scene(|game| game.create_rt_test_scene_simple_light());
 }
 #[wasm_bindgen]
 pub fn load_scene_gandalf_bust(stl_bytes: Option<Vec<u8>>) {
     if let Some(bytes) = stl_bytes {
         console_log!("wasm.rs: load_scene_gandalf_bust");
-        GAME_INSTANCE.with(|game_instance| {
-            game_instance.borrow_mut().load_scene_gandalf_bust(&bytes);
-        });
+        edit_scene(|game| game.load_scene_gandalf_bust(&bytes));
     } else {
         console_error!("wasm.rs: load_scene_gandalf_bust failed, bytes are None");
     }
@@ -286,9 +289,7 @@ pub fn load_scene_gandalf_bust(stl_bytes: Option<Vec<u8>>) {
 pub fn load_scene_roza_bust(glb_bytes: Option<Vec<u8>>) {
     if let Some(bytes) = glb_bytes {
         console_log!("wasm.rs: load_scene_roza_bust");
-        GAME_INSTANCE.with(|game_instance| {
-            game_instance.borrow_mut().load_scene_roza_bust(&bytes);
-        });
+        edit_scene(|game| game.load_scene_roza_bust(&bytes));
     } else {
         console_error!("wasm.rs: load_scene_roza_bust failed, bytes are None");
     }
@@ -297,9 +298,7 @@ pub fn load_scene_roza_bust(glb_bytes: Option<Vec<u8>>) {
 pub fn load_scene_dragon(stl_bytes: Option<Vec<u8>>) {
     if let Some(bytes) = stl_bytes {
         console_log!("wasm.rs: load_scene_dragon");
-        GAME_INSTANCE.with(|game_instance| {
-            game_instance.borrow_mut().load_scene_dragon(&bytes);
-        });
+        edit_scene(|game| game.load_scene_dragon(&bytes));
     } else {
         console_error!("wasm.rs: load_scene_dragon failed, bytes are None");
     }
@@ -309,9 +308,7 @@ pub fn load_scene_mirror_box(skull_stl_bytes: Option<Vec<u8>>, sculpture_stl_byt
     if let Some(skull_bytes) = skull_stl_bytes {
         if let Some(sculpture_bytes) = sculpture_stl_bytes {
             console_log!("wasm.rs: load_scene_mirror_box");
-            GAME_INSTANCE.with(|game_instance| {
-                game_instance.borrow_mut().load_scene_mirror_box(&skull_bytes, &sculpture_bytes);
-            });
+            edit_scene(|game| game.load_scene_mirror_box(&skull_bytes, &sculpture_bytes));
         } else {
             console_error!("wasm.rs: load_scene_mirror_box failed, sculpture bytes are None");
         }
@@ -323,9 +320,7 @@ pub fn load_scene_mirror_box(skull_stl_bytes: Option<Vec<u8>>, sculpture_stl_byt
 pub fn load_scene_suzanne_monkey(stl_bytes: Option<Vec<u8>>) {
     if let Some(bytes) = stl_bytes {
         console_log!("wasm.rs: load_scene_suzanne_monkey");
-        GAME_INSTANCE.with(|game_instance| {
-            game_instance.borrow_mut().load_scene_suzanne_monkey(&bytes);
-        })
+        edit_scene(|game| game.load_scene_suzanne_monkey(&bytes));
     } else {
         console_error!("wasm.rs: load_scene_suzanne_monkey failed, bytes are None");
     }
@@ -424,7 +419,9 @@ pub fn init_and_begin_game_loop() {
 
             // process game loop
             let mut borrowed_game_instance = game_instance.borrow_mut();
-            borrowed_game_instance.game_loop();
+            if !borrowed_game_instance.game_loop() {
+                return;
+            }
 
             // draw the pixel buffer onto the canvas only if the game is running
             if true {

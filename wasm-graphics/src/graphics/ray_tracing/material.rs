@@ -41,10 +41,9 @@ impl Lambertian {
 
 impl Material for Lambertian {
     fn scatter(&self, ray: &Ray, hit_record: &HitRecord) -> (bool, Vec3, Ray) {
-        let reflected_dir = hit_record.normal + Vec3::random_on_unit_sphere();
-
+        let mut reflected_dir = hit_record.normal + Vec3::random_on_unit_sphere();
         if reflected_dir.near_zero() {
-            console_log!("reflected_dir near zero");
+            reflected_dir = hit_record.normal;
         }
 
         let reflected_ray = Ray::new(hit_record.pos, reflected_dir);

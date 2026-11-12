@@ -7,7 +7,7 @@ use rayon::prelude::*;
 
 use crate::{console_error, console_log, console_warn, utils::{math::{degrees_to_radians, radians_to_degrees, Vec3}, utils::{clamp_color, gamma_correct_color, get_time, shift_color}}, wasm::wasm::{js_update_dof_strength, js_update_focal_distance, js_update_follow_camera, js_update_fov, js_update_game_status, js_update_scene_loading, js_update_selected_obj_mat_props, MaterialProperties}};
 
-use super::{buffers::{PixelBuf, ZBuffer}, camera::Camera, gltf_parser::{extract_combined_mesh_from_gltf, extract_combined_mesh_from_raw_glb_bytes}, lighting::Light, mesh::{Mesh, PhongProperties}, ray_tracing::{bvh::{BVHNode, FlattenedBVH}, hittable::Hittable, material::{Dielectric, Lambertian, Material, Metal}}, scene_object::SceneObject};
+use super::{buffers::{PixelBuf, ZBuffer}, camera::Camera, gltf_parser::{extract_combined_mesh_from_gltf, extract_combined_mesh_from_raw_glb_bytes}, lighting::Light, mesh::{Mesh, PhongProperties}, ray_tracing::{bvh::{FlattenedBVH, RayScene}, hittable::Hittable, material::{Dielectric, Lambertian, Material, Metal}}, scene_object::SceneObject};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum GameStatus {
@@ -44,10 +44,12 @@ pub struct Game {
     pub status: GameStatus,
     pub selected_object_index: Option<usize>,
     pub ray_samples_accumulated: usize,
+    pub ray_next_row: usize,
+    pub ray_target_samples: usize,
 
     // ray-tracing variables
-    // pub bvh: Option<BVHNode>,
-    pub bvh: Option<FlattenedBVH>,
+    pub ray_scene: Option<RayScene>,
+    pub ray_seed: u32,
     rt_lights: Vec<Box<dyn Hittable>>,
     pub ray_max_depth: usize,
 
@@ -63,12 +65,18 @@ pub struct Game {
 impl Game {
 
     pub fn new() -> Game {
-        let mut game = Game {
+        let game = Self::with_dimensions(500, 500);
+        game.js_update_ui();
+        game
+    }
+
+    pub fn with_dimensions(width: usize, height: usize) -> Self {
+        Self {
 
             scene_objects: RwLock::new(Vec::new()),
             lights: Vec::new(),
 
-            camera: Camera::new(Vec3::new(0.001, 0.001, 0.501), 0.001, 0.001, PI/2.0, 500, 500),
+            camera: Camera::new(Vec3::new(0.001, 0.001, 0.501), 0.001, 0.001, PI/2.0, width, height),
 
             max_sky_color: Vec3::new(0.5, 0.7, 1.0),
             min_sky_color: Vec3::new(1.0, 1.0, 1.0),
@@ -76,8 +84,8 @@ impl Game {
             rt_max_sky_color: Vec3::new(0.5, 0.7, 1.0),
             rt_min_sky_color: Vec3::new(1.0, 1.0, 1.0),
 
-            pixel_buf: PixelBuf::new(500, 500),
-            zbuf: ZBuffer::new(500, 500),
+            pixel_buf: PixelBuf::new(width, height),
+            zbuf: ZBuffer::new(width, height),
 
             keys_currently_pressed: HashSet::new(),
             keys_pressed_last_frame: HashSet::new(),
@@ -90,9 +98,12 @@ impl Game {
             status: GameStatus::RasterizingNoLighting,
             selected_object_index: None,
             ray_samples_accumulated: 0,
+            ray_next_row: 0,
+            ray_target_samples: 16,
 
             // ray tracing variables
-            bvh: None,
+            ray_scene: None,
+            ray_seed: 20261112,
             rt_lights: Vec::new(),
             ray_max_depth: 20,
 
@@ -103,67 +114,11 @@ impl Game {
             rt_start_time: 0.0,
 
             // testing
-        };
+        }
 
-        // game.create_rt_test_scene_spheres();
-        // game.create_rt_test_scene_simple_light();
-        // game.create_rt_test_scene_cornell();
-        // game.create_rt_test_scene_cornell_metal();
-
-        // game.add_mesh(Mesh::build_cube(
-        //     Vec3::new(11.0, 0.0, 0.5),
-        //     1.0,
-        //     Vec3::new(1.0, 0.0, 0.0),
-        //     PhongProperties::default())
-        // );
-
-        // game.add_mesh(Mesh::build_checkerboard(
-        //     Vec3::zero(), 
-        //     20, 
-        //     Vec3::new(0.8, 0.8, 0.8), 
-        //     Vec3::new(0.6, 0.6, 0.6), 
-        //     PhongProperties::default(),
-        //     false,
-        // ));
-
-        // let light = Light::new(
-        //     Vec3::new(10.0, 100.0, 100.0), 
-        //     Vec3::new(0.0, -100.0, -100.0),
-        //     PI/15.0,
-        //     50.0 * Vec3::white(),
-        //     1.0,
-        //     2000,
-        //     2000
-        // );
-        // game.lights.push(light);
-
-        // for light in game.lights.iter_mut() {
-        //     light.clear_shadow_map();
-        //     light.add_meshes_to_shadow_map(&game.meshes.borrow());
-        // }
-
-        // let rt_objects = game
-        //     .meshes
-        //     .borrow()
-        //     .iter()
-        //     .flat_map(|m| m.to_rt_hittables(&Lambertian::default()))
-        //     .collect();
-        
-        // game.bvh = Some(BVHNode::new(rt_objects));
-
-        // DEFAULT SCENE
-        // game.create_rt_test_scene_spheres();
-
-        // Update JS initial states where needed
-        js_update_fov(radians_to_degrees(game.camera.get_fov()));
-        js_update_focal_distance(game.focus_dist);
-        js_update_dof_strength(game.defocus_angle);
-
-        return game;
     }
 
-
-    pub fn game_loop(&mut self) {
+    pub fn game_loop(&mut self) -> bool {
 
         // process these no matter the game state
         self.process_all_input();
@@ -181,12 +136,22 @@ impl Game {
                 // self.gamma_correct_post_processing(); // already done in wasm.rs by get_gamma_corrected_buf_as_u8
             },
             GameStatus::RayTracing => {
-                self.render_ray_tracing();
+                if self.ray_samples_accumulated == self.ray_target_samples {
+                    return false;
+                }
+                let frame_start = get_time();
+                loop {
+                    self.render_sample_rows(8);
+                    if self.ray_samples_accumulated == self.ray_target_samples || get_time() - frame_start >= 12.0 {
+                        break;
+                    }
+                }
+                let complete = self.ray_samples_accumulated == self.ray_target_samples;
+                self.report_render_progress(if complete { 2 } else { 1 });
             },
-            GameStatus::Paused => {
-
-            }
+            GameStatus::Paused => return false,
         }
+        true
     }
 
     fn set_game_status(&mut self, status: GameStatus) {
@@ -204,16 +169,19 @@ impl Game {
     }
 
     pub fn set_fov(&mut self, fov: f32) {
+        if self.status == GameStatus::RayTracing { return; }
         self.camera.set_fov(fov);
         let fov_degrees = radians_to_degrees(fov);
         js_update_fov(fov_degrees);
     }
 
     pub fn set_focal_dist(&mut self, dist: f32) {
+        if self.status == GameStatus::RayTracing { return; }
         self.focus_dist = dist;
         js_update_focal_distance(dist);
     }
     pub fn set_defocus_angle(&mut self, angle: f32) {
+        if self.status == GameStatus::RayTracing { return; }
         self.defocus_angle = angle;
         js_update_dof_strength(angle);
     }
@@ -227,18 +195,22 @@ impl Game {
     }
 
     pub fn enter_edit_mode(&mut self) {
+        if self.status == GameStatus::RayTracing { return; }
         self.deselect_object();
         self.set_game_status(GameStatus::RasterizingNoLighting);
     }
 
-    pub fn enter_ray_tracing_mode(&mut self) {
-        js_update_game_status(2);
-        self.status = GameStatus::RayTracing;
-        self.ray_samples_accumulated = 0;
+    pub fn enter_ray_tracing_mode(&mut self, target: usize) {
+        if self.status == GameStatus::RayTracing { return; }
+        self.set_game_status(GameStatus::RayTracing);
         self.rt_start_time = get_time();
+        self.ray_target_samples = target.clamp(1, 4096);
+        self.reset_accumulation();
+        self.report_render_progress(1);
 
-        if self.bvh.is_none() {
-            self.rebuild_bvh();
+        if self.ray_scene.is_none() {
+            let objects = self.collect_rt_geometry();
+            self.ray_scene = Some(RayScene::Bvh(FlattenedBVH::new(objects)));
         }
         self.extract_rt_lights_from_scene_objects();
     }
@@ -246,6 +218,9 @@ impl Game {
     pub fn stop_ray_tracing(&mut self) {
         match self.status {
             GameStatus::RayTracing => {
+                if self.ray_samples_accumulated < self.ray_target_samples {
+                    self.report_render_progress(3);
+                }
                 self.set_game_status(GameStatus::RasterizingNoLighting);
             },
             _ => {
@@ -255,7 +230,22 @@ impl Game {
         }
     }
 
+    pub fn reset_accumulation(&mut self) {
+        self.ray_samples_accumulated = 0;
+        self.ray_next_row = 0;
+        self.pixel_buf.clear_to_black();
+    }
+
+    fn report_render_progress(&self, phase: u32) {
+        crate::wasm::wasm::js_update_render_progress(
+            phase, self.ray_samples_accumulated, self.ray_target_samples,
+            self.ray_next_row as f64 / self.camera.height as f64,
+            get_time() - self.rt_start_time,
+        );
+    }
+
     pub fn exit_edit_mode(&mut self) {
+        if self.status == GameStatus::RayTracing { return; }
         console_log!("game.rs: exit_edit_mode()");
         self.extract_raster_lights_from_scene_objects();
         self.recalculate_shadow_maps();
@@ -282,7 +272,7 @@ impl Game {
                 selected_obj.set_color(color);
                 selected_obj.set_material_properties(material_type, extra_prop, color);
 
-                self.bvh = None; // invalidate bvh if obj is changed
+                self.ray_scene = None; // invalidate bvh if obj is changed
 
                 let props = self.parse_selected_obj_mat_props(selected_obj);
                 js_update_selected_obj_mat_props(Some(props));
@@ -301,7 +291,7 @@ impl Game {
                 let selected_obj = &mut self.scene_objects.write().unwrap()[selected_index];
                 let offset = Vec3::new(x,y,z);
                 selected_obj.translate_by(offset);
-                self.bvh = None; // invalidate bvh if obj is changed
+                self.ray_scene = None; // invalidate bvh if obj is changed
             } else {
                 console_error!("Game::translate_selected_obj() called but no object is selected");
             }
@@ -318,8 +308,16 @@ impl Game {
             if let Some(selected_index) = self.selected_object_index {
                 // let selected_obj = &mut self.scene_objects.borrow_mut()[selected_index];
                 let selected_obj = &mut self.scene_objects.write().unwrap()[selected_index];
-                selected_obj.rotate_around_center(z_rad, y_rad);
-                self.bvh = None; // invalidate bvh if obj is changed
+                if z_rad != 0.0 || y_rad != 0.0 {
+                    selected_obj.rotate_around_center(z_rad, y_rad);
+                }
+                if x_rad != 0.0 {
+                    // Reuse the Y rotation in a basis rotated by 90 degrees.
+                    selected_obj.rotate_around_center(-PI / 2.0, 0.0);
+                    selected_obj.rotate_around_center(0.0, x_rad);
+                    selected_obj.rotate_around_center(PI / 2.0, 0.0);
+                }
+                self.ray_scene = None; // invalidate bvh if obj is changed
             } else {
                 console_error!("Game::rotate_selected_obj() called but no object is selected");
             }
@@ -329,12 +327,13 @@ impl Game {
     }
 
     pub fn scale_selected_obj(&mut self, scale_factor: f32) {
+        if !scale_factor.is_finite() || scale_factor <= 0.0 { return; }
         if self.status == GameStatus::RasterizingNoLighting {
             if let Some(selected_index) = self.selected_object_index {
                 // let selected_obj = &mut self.scene_objects.borrow_mut()[selected_index];
                 let selected_obj = &mut self.scene_objects.write().unwrap()[selected_index];
                 selected_obj.scale_by(scale_factor);
-                self.bvh = None; // invalidate bvh if obj is changed
+                self.ray_scene = None; // invalidate bvh if obj is changed
             } else {
                 console_error!("Game::scale_selected_obj() called but no object is selected");
             }
@@ -361,9 +360,7 @@ impl Game {
                 new_sphere.translate_to(looking_at_pos);
             }
 
-            // self.scene_objects.borrow_mut().push(new_sphere);
-            self.scene_objects.write().unwrap().push(new_sphere);
-            self.bvh = None; // invalidate bvh if obj is added
+            self.add_editable_object(new_sphere);
         } else {
             console_error!("Game::add_sphere() called but not in Rasterizing state");
         }
@@ -386,15 +383,14 @@ impl Game {
                 new_box.translate_to(looking_at_pos);
             }
 
-            // self.scene_objects.borrow_mut().push(new_box);
-            self.scene_objects.write().unwrap().push(new_box);
-            self.bvh = None; // invalidate bvh if obj is added
+            self.add_editable_object(new_box);
         } else {
             console_error!("Game::add_sphere() called but not in Rasterizing state");
         }
     }
 
     pub fn add_custom_object(&mut self, glb_bytes: &[u8]) {
+        if self.status != GameStatus::RasterizingNoLighting { return; }
         match extract_combined_mesh_from_raw_glb_bytes(glb_bytes) {
             Ok(mut mesh) => {
 
@@ -422,13 +418,23 @@ impl Game {
                     false
                 );
 
-                self.scene_objects.write().unwrap().push(new_obj);
-                self.bvh = None; // invalidate bvh if obj is added
+                self.add_editable_object(new_obj);
             },
             Err(e) => {
                 console_error!("Failed to extract mesh from glb bytes: {}", e);
             }
         }
+    }
+
+    pub fn add_editable_object(&mut self, object: SceneObject) {
+        let index = {
+            let mut objects = self.scene_objects.write().unwrap();
+            let index = objects.len();
+            objects.push(object);
+            index
+        };
+        self.ray_scene = None;
+        self.select_object(index);
     }
 
     fn process_all_input(&mut self) {
@@ -443,7 +449,7 @@ impl Game {
             _ => {} 
         }
 
-        if self.keys_pressed_last_frame.contains("p") {
+        if self.status != GameStatus::RayTracing && self.keys_pressed_last_frame.contains("p") {
             console_log!("Pausing or unpausing");
             if self.status == GameStatus::Paused {
                 self.status = GameStatus::RasterizingNoLighting;
@@ -451,10 +457,6 @@ impl Game {
                 self.status = GameStatus::Paused;
             }
         }
-        if self.keys_pressed_last_frame.contains("r") {
-            self.enter_ray_tracing_mode();
-        }
-
         self.keys_pressed_last_frame.clear();
         self.mouse_clicked_last_frame = false;
     }
@@ -552,7 +554,7 @@ impl Game {
                     // self.scene_objects.borrow_mut().remove(selected_index);
                     self.scene_objects.write().unwrap().remove(selected_index);
                     self.deselect_object();
-                    self.bvh = None; // invalidate bvh if obj is deleted
+                    self.ray_scene = None; // invalidate bvh if obj is deleted
                 } else {
                     console_error!("Game::delete_selected_object() called while in edit mode but no object is selected");
                     return;
@@ -627,7 +629,7 @@ impl Game {
                     console_log!("not looking at anything, translating to {:?}", looking_at_pos);
                     selected_obj.translate_to(looking_at_pos);
                 }
-                self.bvh = None; // invalidate bvh if obj is moved
+                self.ray_scene = None; // invalidate bvh if obj is moved
             }
         }
         *self.looking_at.write().unwrap() = None;
@@ -1153,7 +1155,6 @@ impl Game {
     }
 
     pub fn extract_rt_lights_from_scene_objects(&mut self) {
-        console_log!("Extracting ray tracing lights from scene objects");
         self.rt_lights = self
             .scene_objects
             .read()
@@ -1171,31 +1172,29 @@ impl Game {
         }
     }
 
-    pub fn rebuild_bvh(&mut self) {
-        let rt_objects = self
+    pub fn collect_rt_geometry(&self) -> Vec<Box<dyn Hittable>> {
+        self
             .scene_objects
             .read()
             .unwrap()
             .iter()
             .flat_map(|s| s.hittables.iter().map(|h| h.clone_box()))
-            .collect();
-        // self.bvh = Some(BVHNode::new(rt_objects));
-        self.bvh = Some(FlattenedBVH::new(rt_objects));
+            .collect()
     }
 
     pub fn pre_scene_load(&mut self) {
         // js_update_scene_loading(true);
         self.scene_objects.write().unwrap().clear();
-        self.bvh = None;
+        self.ray_scene = None;
         self.lights.clear();
         self.rt_lights.clear();
         self.looking_at.write().unwrap().take(); // clear looking at
         self.defocus_angle = 0.0; // reset defocus angle
-        self.selected_object_index = None; // clear selected object
+        self.deselect_object();
     }
 
     pub fn post_scene_load(&mut self) {
-        self.bvh = None; // invalidate bvh
+        self.ray_scene = None; // invalidate bvh
         self.extract_raster_lights_from_scene_objects();
         self.extract_rt_lights_from_scene_objects();
         self.js_update_ui();
@@ -1248,7 +1247,7 @@ impl Game {
 
                 self.ray_max_depth = 20;
 
-                self.bvh = None; // invalidate bvh
+                self.ray_scene = None; // invalidate bvh
                 self.set_fov(degrees_to_radians(90.0));
 
                 self.post_scene_load();
@@ -1297,7 +1296,7 @@ impl Game {
                     scene_objects.push(key_light_scene_obj);
                 }
 
-                self.bvh = None; // invalidate bvh
+                self.ray_scene = None; // invalidate bvh
                 self.set_fov(degrees_to_radians(75.0)); // Slightly narrower FOV can feel more cinematic
                 self.camera.pos = Vec3::new(-15.0, 0.0, 5.0); // Example camera position
                 self.camera.look_at(&Vec3::new(0.0,0.0,2.0)); // Make camera look towards the bridge center

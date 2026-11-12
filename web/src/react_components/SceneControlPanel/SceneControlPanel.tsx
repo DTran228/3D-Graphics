@@ -9,12 +9,6 @@ import {
     AccordionItem,
     AccordionTrigger,
 } from "@/components/ui/accordion";
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch"
@@ -32,7 +26,8 @@ import AddObjectPanel from './AddObjectPanel';
 import InstructionsDialog from "./InstructionsDialog";
 import { useGameContext } from "@/gameContext";
 import { wasmToJsBridge } from "@/wasmToJSBridge";
-import { getFileBytes } from "@/index";
+import { getFileBytes } from "@/assets";
+import type { Runtime } from "@/benchmark";
 
 const loadSceneRandomSpheres = () => {
     console.log("Loading random spheres scene");
@@ -121,18 +116,7 @@ const loadSceneSuzanneMonkey = async () => {
 }
 
 
-setTimeout(() => {
-    // loadSceneGandalfBust();
-    // loadSceneRozaBust();
-    // loadSceneDragon();
-    // loadSceneMirrorBox();
-    // loadSceneSuzanneMonkey();
-    loadSceneFantasyBook();
-}, 1000)
-// loadSceneFantasyBook();
-
-
-const SceneControlPanel: React.FC = () => {
+const SceneControlPanel = ({ runtime }: { runtime: Runtime }) => {
 
     const {
         selectedObjMatProps,
@@ -142,11 +126,15 @@ const SceneControlPanel: React.FC = () => {
         focalDistance,
         dofStrength,
         sceneLoading,
+        renderProgress,
     } = useGameContext();
 
     // state to control which accordion items are open
     const [openAccordionItems, setOpenAccordionItems] = useState<string[]>([]);
     const [instructionsOpen, setInstructionsOpen] = useState(false);
+    const [sampleTarget, setSampleTarget] = useState('16');
+    const target = Number(sampleTarget);
+    const validSampleTarget = Number.isInteger(target) && target >= 1 && target <= 4096;
 
     // --- handlers ---
     const handleLoadDefaultScene = (sceneValue: string) => {
@@ -190,7 +178,7 @@ const SceneControlPanel: React.FC = () => {
 
     const handleEnterRayTraceMode = () => {
         console.log("Context: Requesting WASM to enter ray trace mode");
-        wasm.enter_ray_tracing_mode();
+        if (validSampleTarget && !sceneLoading) wasm.enter_ray_tracing_mode(target);
     };
 
     const handleStopRayTracing = () => {
@@ -258,6 +246,8 @@ const SceneControlPanel: React.FC = () => {
     useEffect(() => {
         // Show on first load. For "first visit only", use localStorage here.
         setInstructionsOpen(true);
+        const load = setTimeout(() => void loadSceneFantasyBook().finally(() => wasmToJsBridge.updateSceneLoading(false)), 0);
+        return () => clearTimeout(load);
     }, []);
 
     return (
@@ -268,6 +258,10 @@ const SceneControlPanel: React.FC = () => {
                 <InstructionsDialog open={instructionsOpen} onOpenChange={setInstructionsOpen} />
             </CardHeader>
             <CardContent className="space-y-6 pb-20">
+                <div className="space-y-1 text-xs text-muted-foreground">
+                    <p>Rayon workers {runtime.actualThreads}/{runtime.requestedThreads} · Browser reports {runtime.hardwareConcurrency}</p>
+                    <a className="underline" href="?benchmark=A">Open benchmark</a>
+                </div>
 
                 {/* Load Default Scene Dropdown */}
                 <div className="space-y-2 pt-2">
@@ -354,38 +348,48 @@ const SceneControlPanel: React.FC = () => {
                     />
                 </div>
 
-                {/* Top Level Mode Buttons */}
-                <div className="mb-4">
-
-                    {/* Ray Trace / Stop Ray Tracing Button Slot */}
+                <div className="space-y-2">
+                    <Label htmlFor="sample-target">Samples per pixel</Label>
+                    <input
+                        id="sample-target"
+                        type="number"
+                        min={1}
+                        max={4096}
+                        step={1}
+                        value={sampleTarget}
+                        disabled={inRayTracingMode}
+                        onChange={event => setSampleTarget(event.target.value)}
+                        className="w-full rounded border bg-background px-2 py-1"
+                    />
                     {inRayTracingMode ? (
-                        <Button
-                            onClick={handleStopRayTracing}
-                            className="w-full whitespace-normal break-words h-10"
-                        >
-                            Stop Ray Tracing
+                        <Button onClick={handleStopRayTracing} className="w-full">
+                            {renderProgress?.phase === 2 ? 'Back to editor' : 'Cancel render'}
                         </Button>
                     ) : (
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                    <div className="w-full"> {/* Wrapper for TooltipTrigger when button is disabled */}
-                                    <Button
-                                        onClick={handleEnterRayTraceMode}
-                                        className="
-                                            w-full whitespace-normal break-words h-10
-                                            bg-green-600 hover:bg-green-700
-                                            dark:bg-green-500 dark:hover:bg-green-400
-                                            dark:text-black
-                                        "
-                                    >
-                                        Ray Trace
-                                    </Button>
-                                </div>
-                            </TooltipTrigger>
-                                <TooltipContent>
-                                    <p>Generate a photorealistic still image.</p>
-                                </TooltipContent>
-                        </Tooltip>
+                        <Button
+                            onClick={handleEnterRayTraceMode}
+                            disabled={sceneLoading || !validSampleTarget}
+                            className="w-full"
+                        >
+                            Start render
+                        </Button>
+                    )}
+                    {renderProgress && (
+                        <>
+                            {renderProgress.phase === 1 && (
+                                <progress
+                                    aria-label="Render progress"
+                                    className="w-full"
+                                    max={renderProgress.target}
+                                    value={renderProgress.samples + renderProgress.rowFraction}
+                                />
+                            )}
+                            <p role="status" data-render-phase={renderProgress.phase} className="text-sm">
+                                {['', 'Rendering', 'Complete', 'Cancelled'][renderProgress.phase]} ·{' '}
+                                {renderProgress.samples}/{renderProgress.target} spp ·{' '}
+                                {(renderProgress.elapsedMs / 1000).toFixed(2)} s
+                            </p>
+                        </>
                     )}
                 </div>
 

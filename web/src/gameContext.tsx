@@ -1,6 +1,6 @@
 import * as wasm from '@wasm/wasm_graphics';
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { IWasmToJsBridge, wasmToJsBridge, GameStatus } from '@/wasmToJSBridge'; // Adjust path
+import { IWasmToJsBridge, wasmToJsBridge, GameStatus, RenderProgress } from '@/wasmToJSBridge';
 
 interface IGameContext {
     // State variables
@@ -11,6 +11,7 @@ interface IGameContext {
     focalDistance: number;
     dofStrength: number;
     sceneLoading: boolean;
+    renderProgress: RenderProgress | null;
     // Add other shared states here, e.g., selectedObjectProperties, rayTraceProgress
 
     // Actions callable from React components (which might then call WASM)
@@ -40,6 +41,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     const [focalDistance, setFocalDistance] = useState<number>(10.0);
     const [dofStrength, setDofStrength] = useState<number>(0.0);
     const [sceneLoading, setSceneLoading] = useState<boolean>(false);
+    const [renderProgress, setRenderProgress] = useState<RenderProgress | null>(null);
 
     // Setup the WASM to JS bridge implementations
     useEffect(() => {
@@ -90,6 +92,9 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
                 console.log("GameProvider: Bridge updating scene loading status", loading);
                 setSceneLoading(loading);
             },
+            updateRenderProgress: (phase, samples, target, rowFraction, elapsedMs) => {
+                setRenderProgress({ phase, samples, target, rowFraction, elapsedMs });
+            },
             // Implement other bridge functions here to update context state
         };
 
@@ -110,6 +115,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         focalDistance,
         dofStrength,
         sceneLoading,
+        renderProgress,
     };
 
     return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

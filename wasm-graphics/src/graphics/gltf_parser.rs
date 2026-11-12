@@ -44,10 +44,12 @@ pub fn load_glb_model(glb_bytes: &[u8]) -> bool {
             let combined_scene_obj = SceneObject::new_from_mesh(combined_mesh, Lambertian::default().clone_box(), false);
             GAME_INSTANCE.with(|game_instance| {
                 let mut g = game_instance.borrow_mut();
-                g.scene_objects.write().unwrap().push(combined_scene_obj);
-                g.bvh = None; // invalidate the bvh
-            });
-            true
+                if g.status != super::game::GameStatus::RasterizingNoLighting {
+                    return false;
+                }
+                g.add_editable_object(combined_scene_obj);
+                true
+            })
         },
         Err(e) => {
             console_error!("GLB error on decode_glb_bytes(): {}", e);

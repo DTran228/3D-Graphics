@@ -1,58 +1,52 @@
-import React from 'react';
 import ReactDOM from 'react-dom/client';
 import * as wasm from '../wasm/wasm_graphics'
 
 import App from './react_components/App'
+import { BenchmarkPage, configurations, type Configuration } from './benchmark';
 
 import './index.css'
 
-// Initialize wasm module
-await wasm.default();
-await wasm.initThreadPool(navigator.hardwareConcurrency);
-// Note: defer wasm.init_and_begin_game_loop() to MainCanvas, so 
-// we can ensure the canvas is ready and the context is set up.
+const root = ReactDOM.createRoot(document.getElementById('root')!);
+const hardwareThreads = navigator.hardwareConcurrency || 1;
+const query = new URLSearchParams(location.search);
+const benchmark = query.get('benchmark');
+const configuration = benchmark && Object.hasOwn(configurations, benchmark) ? benchmark as Configuration : null;
+const requested = Number(query.get('threads'));
+const editorThreads = Number.isInteger(requested) && requested >= 1 && requested <= 32
+    ? requested : Math.min(hardwareThreads, 8);
+const threads = configuration ? configurations[configuration].threads : editorThreads;
 
-// Create a root and render the App component
-const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
-root.render(
-    <React.StrictMode>
-        <App />
-    </React.StrictMode>
-);
-
-// Helper functions to interface with the WebAssembly module
-export async function loadGlbModel(url: string) {
+async function initialize() {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-        const response = await fetch(url);
-        const glbBuffer = await response.arrayBuffer();
-        const glbBytes = new Uint8Array(glbBuffer);
-        
-        // Call the Wasm function with the single GLB file
-        const success = wasm.load_glb_model(glbBytes);
-        return success;
+        if (!crossOriginIsolated || typeof SharedArrayBuffer === 'undefined') {
+            throw new Error('SharedArrayBuffer requires cross-origin isolation. Open the app from Vite on localhost or use a host with COOP/COEP headers.');
+        }
+        root.render(<p role="status">Loading renderer ({threads} requested workers)…</p>);
+        const wasmStart = performance.now();
+        await wasm.default();
+        const poolStart = performance.now();
+        await Promise.race([
+            wasm.initThreadPool(threads),
+            new Promise((_, reject) => {
+                timeout = setTimeout(() => reject(new Error('Rayon workers did not initialize within 15 seconds.')), 15_000);
+            }),
+        ]);
+        const runtime = {
+            requestedThreads: threads,
+            actualThreads: wasm.ray_thread_count(),
+            hardwareConcurrency: hardwareThreads,
+            wasmLoadMs: poolStart - wasmStart,
+            poolInitMs: performance.now() - poolStart,
+        };
+        root.render(configuration
+            ? <BenchmarkPage configuration={configuration} runtime={runtime} />
+            : <App runtime={runtime} />);
     } catch (error) {
-        console.error("Error loading GLB model:", error);
-        return false;
-    }
-};
-
-export async function getFileBytes(url: string): Promise<Uint8Array | null> {
-    try {
-        const response = await fetch(url);
-        const fileBuffer = await response.arrayBuffer();
-        const fileBytes = new Uint8Array(fileBuffer);
-        return fileBytes;
-    } catch (error) {
-        console.error("Error fetching file bytes:", error);
-        return null;
+        root.render(<p role="alert">Renderer unavailable. {String(error)}</p>);
+    } finally {
+        clearTimeout(timeout);
     }
 }
 
-// https://sketchfab.com/3d-models/medieval-fantasy-book-06d5a80a04fc4c5ab552759e9a97d91a
-// loadGlbModel("../static/medieval_fantasy_book.glb");
-
-// https://sketchfab.com/3d-models/magical-help-73fcb7197ba441419c768105c7db5d17
-// loadGlbModel("../static/magical_help.glb");
-
-// https://sketchfab.com/3d-models/this-tree-is-growing-60a1b5a73e184c8db7aa6007cd9d3462
-// loadGlbModel("../static/this_tree_is_growing.glb");
+void initialize();
