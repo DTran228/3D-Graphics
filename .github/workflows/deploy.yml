@@ -1,9 +1,7 @@
 name: Deploy to GitHub Pages
 
 on:
-  push:
-    branches:
-      - main 
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -19,18 +17,15 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '24'
 
       - name: Install dependencies
-        working-directory: ./web # Run in the 'web' subdirectory
-        run: npm install
+        working-directory: ./web
+        run: npm ci
 
       - name: Build the project
-        working-directory: ./web # Run in the 'web' subdirectory
-        run: npm run build  # This will create web/dist
-    
-      - name: List contents of web/dist # <-- ADD THIS DIAGNOSTIC STEP
-        run: ls -R ./web/dist
+        working-directory: ./web
+        run: npm run build
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
