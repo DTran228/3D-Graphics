@@ -23,7 +23,6 @@
       <td width="33%"><a href="images/rt11.png"><img src="images/rt11.png" width="100%" alt="Glass Suzanne model refracting light onto a dark floor"></a></td>
     </tr>
   </table>
-  <sub>Gallery renders from the original 3D Graphics engine.</sub>
 </div>
 
 ---
@@ -117,8 +116,10 @@ npm.cmd exec -- vite preview --host 127.0.0.1 --outDir ../wasm-graphics/target/w
 
 Open the localhost URL printed by Vite. Select **Open benchmark** in the editor to try configurations A, B, and C. The threaded renderer requires cross-origin isolation and `SharedArrayBuffer`. Vite serves the required headers in dev and preview.
 
+[Repository About copy and topics](ABOUT.md)
+
 ## Credits
 
-The original engine, editor, and gallery are from [ElliottF05/3D-Graphics](https://github.com/ElliottF05/3D-Graphics). This version adds the controlled benchmark, deterministic sampling, and render progress and cancellation. The original project cites [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html) as an inspiration.
+ElliottF05 created the original rendering engine, scene editor, and gallery renders. [Original project](https://github.com/ElliottF05/3D-Graphics)
 
-[Repository About copy and topics](ABOUT.md)
+This version adds the controlled benchmark, deterministic sampling, and render progress and cancellation. The original project cites [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html) as an inspiration.
